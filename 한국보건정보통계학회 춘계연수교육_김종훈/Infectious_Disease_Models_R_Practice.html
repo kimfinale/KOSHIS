@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>감염병 수리 모형 실습</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="김종훈" />
+    <meta name="date" content="2021-06-11" />
+    <link rel="stylesheet" href="css/default.css" type="text/css" />
+    <link rel="stylesheet" href="css/default-fonts.css" type="text/css" />
+    <link rel="stylesheet" href="css/mystyle.css" type="text/css" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# 감염병 수리 모형 실습
+## 한국보건정보통계학회 춘계연수교육
+### 김종훈
+### 11 June 2021
+
+---
+
+
+
+
+
+
+### Goals
+
+1. Implementing a differential equation-based `\(SIR\)` model in R
+
+2. Solving the `\(SIR\)` model using numerical integration (deSolve package and Euler)
+
+3. Implement and numerically solve an `\(SEIR\)` model
+
+4. Estimate a model parameter in `\(SEIR\)` model (e.g., `\(\mathcal{R}_0\)`)
+
+
+---
+
+### Session information
+
+1. R version 4.1.0 (2021-05-18)
+ 
+--
+
+2. RStudio Version 1.3.1093
+
+--
+
+3. packages
+
+ - deSolve: numerical integration of ODE's
+
+ - tidyverse: data manipulation and plotting 
+
+ - lubridate: date format
+ 
+ - xaringan: slide generation
+ 
+
+---
+### Implementing an SIR model using differentail equation (DE) framework
+
+- Differential equations (DEs) are commonly used to describe the nature.
+
+- DEs describe rate of change of the variables. 
+
+- Complex DEs don't have analytic solutions and require numerical integration 
+
+
+---
+### SIR model in differential equations
+
+.left[![:scale 40%](figs/sir_flow.svg)]
+
+- The SIR model in a closed system
+
+`$$\begin{aligned} 
+\mu_{\bullet S} &amp;= \mu_{S \bullet} = \mu_{I \bullet} = \mu_{R \bullet}=0\\
+\mu_{SI} &amp;= \beta \frac{I}{N}\\
+\mu_{IR} &amp;= \gamma\\
+\frac{dS}{dt} &amp;= - \mu_{SI} S\\
+\frac{dI}{dt} &amp;= \mu_{SI} S - \mu_{IR} I\\
+\frac{dR}{dt} &amp;= \mu_{IR} I
+\end{aligned}$$`
+
+
+---
+### R implementation of the SIR model
+
+```r
+closed_sir_model &lt;- function(t,  y, params) {
+  ## first extract the state variables
+  S &lt;- y[1]
+  I &lt;- y[2]
+  R &lt;- y[3]
+  ## now extract the parameters
+  beta &lt;- params["beta"]
+  gamma &lt;- params["gamma"]
+  ## define variables to be consistent with the figure
+  N &lt;- S + I + R
+  muSI &lt;- beta*I/N
+  muIR &lt;- gamma
+  ## now code the model equations
+  dSdt &lt;- - muSI*S
+  dIdt &lt;- muSI*S - muIR*I
+  dRdt &lt;- muIR*I
+  ## combine results into a single vector
+  dydt &lt;- c(dSdt, dIdt, dRdt)
+  ## return result as a list!
+  list(dydt)
+}
+```
+
+---
+### Model inputs
+
+- Parameters, initial values, simulation times
+
+```r
+params &lt;- c(beta = 1/2, gamma = 1/5) # model parameters
+times &lt;- seq(from = 0, to = 60, by = 1) # simulation times
+y0 &lt;- c(S = 999, I = 1, R = 0) # initial values
+```
+--
+
+- Simulation using the deSolve::ode function 
+
+```r
+library(deSolve) # numerical integration algorithm for ODE's
+library(tidyverse) # data manipulation methods
+
+deSolve::ode(func = closed_sir_model, y = y0, times = times, parms = params) %&gt;%
+  as.data.frame() -&gt; out
+```
+
+--
+Exercise 1: Explain `\(\beta, \gamma\)` in plain language. What are their units? 
+
+---
+
+### Time evolution of S, I, R
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-3-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+### Euler method to solve the SIR model
+
+
+```r
+closed_sir_model_euler &lt;- function(tend, y0, params, dt = 0.1) {
+  ## extract the parameters
+  beta &lt;- params["beta"]; gamma &lt;- params["gamma"]; muIR &lt;- gamma
+  ## simulation time
+  t &lt;- seq(0, tend, dt); iter &lt;- length(t)
+  ## variables
+  S &lt;- I &lt;- R &lt;- rep(NA, iter)
+  ## extract the initial values
+  S[1] &lt;- y0["S"]; I[1] &lt;- y0["I"]; R[1] &lt;- y0["R"]  
+  ## now code the model equations
+  for (i in 2:iter) {
+    N &lt;- S[i-1] + I[i-1] + R[i-1]
+    muSI &lt;- beta * I[i-1] / N
+    dSdt &lt;- - muSI * S[i-1]
+    dIdt &lt;- muSI * S[i-1] - muIR * I[i-1]
+    dRdt &lt;- muIR * I[i-1]
+    S[i] &lt;- S[i-1] + dSdt * dt
+    I[i] &lt;- I[i-1] + dIdt * dt
+    R[i] &lt;- R[i-1] + dRdt * dt
+  }
+  return(data.frame(t = t, S = S, I = I, R = R)) ## combine results into a data.frame
+}
+```
+
+---
+### Model parameters, initial values, and simulation times
+
+```r
+params &lt;- c(beta = 1/2, gamma = 1/5) # model parameters
+tend &lt;- 60
+dt = 0.1
+y0 &lt;- c(S = 999, I = 1, R = 0) # initial values
+out_euler &lt;- closed_sir_model_euler(tend = tend, y0 = y0, params = params, dt = dt)
+```
+
+---
+### Check if simulation results match with deSolve
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-5-1.png" style="display: block; margin: auto;" /&gt;
+
+
+---
+## `\(I\)` in response to `\(\beta,\; \gamma\)` 
+
+- `\(\beta,\; \gamma\)` range
+
+```r
+beta_range &lt;- c(0.2, 0.5, 1)
+gamma_range &lt;- 1/c(2, 5, 10)
+```
+
+- Simulation
+
+```r
+expand.grid(beta = beta_range, gamma = gamma_range) %&gt;%
+  group_by(beta, gamma) %&gt;%
+  do({ode(func = closed_sir_model, y = y0, times = times,
+          parms = c(beta=.$beta, gamma=.$gamma)) %&gt;%
+      as.data.frame()}) %&gt;%
+  ggplot(aes(x = time, y = I)) +
+  geom_line()+
+  facet_grid(beta~gamma, scales = 'free_y', labeller = label_both)
+```
+
+- Exercise 2: Select one parameter set (e.g., parameters that lead to `\(R_0&gt;1\)`) and conduct numerical integration of `\(S\)`, `\(I\)`, and `\(R\)`
+
+---
+### 'manipulate' package
+
+```r
+library(manipulate)
+tmax &lt;- 60
+times &lt;- seq(from = 0, to = tmax, by = 1) # simulation times
+y0 &lt;- c(S = 999, I = 1, R = 0) # initial values
+beta &lt;- 0.5
+gamma &lt;- 0.2
+manipulate(
+  ode(func = closed_sir_model, y = y0, times = seq(0, tmax, 1),
+      parms = c( beta = beta, gamma = gamma)) %&gt;%
+  as.data.frame() %&gt;%
+  gather(state, value, -time ) %&gt;% # wide to long format data
+  ggplot(aes(x = time, y = value, color = state)) +
+  geom_line(size = 1.5) +
+  labs(x = 'Time (day)', y = 'Number of individuals') +
+  theme_bw(base_size = 16),
+  beta = slider(0.1, 1),
+  gamma = slider(0.1, 1),
+  tmax = slider(50, 200))
+```
+- Exercise 3: Execute the codes above and check how `\(S, I, R\)` change across `\(\beta\)` and `\(\gamma\)`
+---
+
+class: center, middle
+
+## SEIR model practice 
+&lt;br&gt;
+### Estimate `\(\mathcal{R}_0\)` using Wuhan data 
+
+---
+### Modeling process: Ask questions, collect data
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-9-1.png" style="display: block; margin: auto;" /&gt;
+
+
+---
+### Modeling procedure: Ask questions, collect data
+
+1. Question: Estimate basic reproduction number, `\(\mathcal{R}_0\)`, 
+based on the early data from Wuhan
+
+--
+
+2. Data: Following paper
+![:scale 100%](figs/kucharski_lancet.png)
+&lt;br&gt;
+
+--
+- Findings: `\(R_0=2.35~[95 \% \text{CI}: 1.15, 4.77]\)`
+
+![:scale 120%](figs/kucharski_lancet_findings.png)
+
+---
+### Reported daily symptom onset
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-10-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+### Modeling procedure: modeling
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-11-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+### Modeling the COVID-19 transmission using the SEIR framework 
+.right[![:scale 40%](figs/seir_flow.svg)]
+
+```r
+seir &lt;- function(t, y, params) {
+  S &lt;- y[1]; E &lt;- y[2]; I &lt;- y[3]; R &lt;- y[4]; C &lt;- y[5]
+  beta &lt;- params["beta"]
+  sigma &lt;- params["sigma"]
+  gamma &lt;- params["gamma"]
+  
+  muSE &lt;- beta * I / (S + E + I + R)
+  muEI &lt;- sigma
+  muIR &lt;- gamma
+  
+  dS &lt;- - muSE*S
+  dE &lt;-  muSE*S - muEI*E
+  dI &lt;-  muEI*E - muIR*I
+  dR &lt;-  muIR*I
+  dC &lt;-  muEI*E ## cumulative symtom onset
+  
+  return(list(c(dS, dE, dI, dR, dC)))
+}
+```
+---
+### Model inputs
+
+- Parameters, initial values, simulation times
+
+```r
+y0 &lt;- c(S = 11e6 - 1, E = 0, I = 1, R = 0, C = 1) # initial values
+params &lt;- c(beta = 2.5/4.5, sigma = 1/5.2, gamma = 1/4.5)
+times &lt;- seq(from = 0, to = 35, by = 1)
+```
+Exercise 4: What does `\(1/\sigma\)` represent?
+
+- Simulation
+
+
+```r
+library(deSolve)
+daily_case &lt;- function( params ){ 
+   ode(y = y0, times = times, func = seir, parms = params) %&gt;% 
+   as.data.frame() -&gt; x 
+   n &lt;- nrow(x)
+   x[2:n,"C"] - x[1:(n-1),"C"]
+} 
+```
+Exercise 5: What is the function 'daily_case' for?
+
+---
+### `\(E, I, R, Y\)` over time
+- Daily symptom onset, `\(Y\)`
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-15-1.png" style="display: block; margin: auto;" /&gt;
+
+
+---
+###  `\(\mathcal{R}_0\)` vs. daily symptom onset `\(Y\)`
+- `\(\mathcal{R}_0 = \beta/\gamma\)`. Vary `\(\beta\)` while keeping `\(\gamma\)` constant
+
+
+```r
+beta &lt;- seq(from = 0.1, to = 1, by = 0.05)
+```
+
+![](Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-17-1.png)&lt;!-- --&gt;
+
+---
+### Measurement error modeling
+- Poisson distribution
+`$$y_t \sim \text{Poisson}(Y_t)$$`
+
+`$$\mathcal{L}(\theta) = \prod_{t=1}^{n} f(y_t \vert \theta) = \prod_{t=1}^{n} \frac{Y_t^{y_t} e^{-Y_t}}{y_t!}$$`
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-18-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+###  Implementing Poisson likelihood
+
+- 'stats::dpois', log = TRUE 
+
+
+```r
+poisson_loglik &lt;- function(params) {
+  model &lt;- daily_case(params = params)
+  sum(dpois(x = wuhan$case, lambda = model, log = TRUE)) # sum of log likelihood
+}
+```
+
+- Define a function that returns poisson_loglik value for a given par value
+
+
+```r
+f2 &lt;- function(par) {
+  params &lt;-  c(beta = par[1], sigma = 1/5.2, gamma = 1/4.5)
+  poisson_loglik(params)
+}
+```
+
+---
+### Maximize the poisson_loglik: grid search
+
+
+```r
+res &lt;- data.frame(beta = seq(from = 0.1, to = 1, by = 0.05))
+res$loglik &lt;- sapply(res$beta, f2)
+(theta &lt;- res$beta[which.max(res$loglik)])
+```
+
+```
+## [1] 0.6
+```
+
+```r
+gamma &lt;- 1/4.5; (R0 &lt;- theta/gamma)
+```
+
+```
+## [1] 2.7
+```
+
+Exercise 6: Try different resolutions for 'res'. Do you get the same results?
+
+![](Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-22-1.png)&lt;!-- --&gt;
+
+---
+### Maximize the poisson_loglik: 'stats::optim' 
+
+- Define a function that returns a negative log likelihood 
+
+```r
+f3 &lt;- function(par) {
+  params &lt;-  c(beta = par[1], sigma=1/5.2, gamma = 1/4.5)
+  - poisson_loglik(params)
+}
+```
+Exercise 7: Why do we define a negative log likelihood function?
+
+- Optimize
+
+
+```r
+fit3 &lt;- optim(f3, par = c(0.1), method = "Brent", lower = 0, upper = 10)
+(theta &lt;- fit3$par)
+```
+
+```
+## [1] 0.577124
+```
+
+```r
+gamma &lt;- 1/4.5; (R0 &lt;- theta/gamma)
+```
+
+```
+## [1] 2.597058
+```
+Exercise 8: Try different 'par'. Do you get the same result?
+
+---
+### Estimate parameters: confidence interval
+
+
+- 95% confidence interval for `\(\hat{\theta}\)` consists of all the values `\(\theta^*\)` for which
+`$$\text{log}\mathcal{L}(\hat{\theta}) - \text{log}\mathcal{L}(\theta^*) &lt; 1.92$$`
+
+
+```r
+maxloglik &lt;- - fit3$value
+prof_b &lt;- expand.grid(b = seq(0.5, 0.65, length = 200))
+prof_b$loglik &lt;- -sapply(prof_b$b, f3)
+cutoff &lt;- maxloglik - qchisq(p = 0.95, df = 1) / 2
+(limits &lt;- range(subset(prof_b, loglik &gt; cutoff)$b))
+```
+
+```
+## [1] 0.5557789 0.5972362
+```
+
+```r
+(R0_interval &lt;- limits/gamma)
+```
+
+```
+## [1] 2.501005 2.687563
+```
+
+---
+### 95% confidence interval
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-27-1.png" style="display: block; margin: auto;" /&gt;
+&lt;!-- - `\(\hat{\beta}=0.58\left[0.56,0.60 \right], R_0 = \beta/\gamma = 2.60 \left[2.51,2.69 \right]\)` --&gt;
+
+---
+### Simulation the model using `\(\beta_{MLE}\)`
+
+```r
+params &lt;- c(beta = fit3$par, sigma = 1/5.2, gamma = 1/4.5)
+model_pred &lt;- daily_case(params)
+simdat &lt;- replicate(2000, rpois(n=length(model_pred), lambda = model_pred))
+quantiles &lt;- apply(simdat, 1, quantile, probs = c(0.025,0.5,0.975))
+typical &lt;- sample(ncol(simdat), 1)
+```
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-29-1.png" style="display: block; margin: auto;" /&gt;
+---
+
+class: center, middle
+
+## Estimate parameters for the Shincheonji COVID-19 outbreak
+&lt;br&gt;
+ 
+---
+### Daegu Shincheonji COVID-19
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-30-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+### Model inputs
+- Daily confirmed cases
+
+```r
+daily_confirmed &lt;- function(params){
+  ode(y = y0, times = times, func = seir, parms = params) %&gt;%
+  as.data.frame() -&gt; x
+  n &lt;- nrow(x)
+  x[2:n, "R"] - x[ 1:(n-1), "R"]
+}
+```
+
+--
+
+- Parameters, initial values, simulation times
+
+```r
+y0 &lt;- c(S = 9334-1, E = 0, I = 1, R = 0, C = 0)
+times &lt;- seq(0, 43, 1)
+R0 &lt;- 4
+params &lt;- c(beta = R0/4.5, sigma = 1/5.2, gamma = 1/4.5)
+```
+Exercise 9: Examine the 'daily_confirmed' function and params. 
+How long is the average delay from symtom onset to confirmation?
+---
+### Maximize log likelihood
+- negative log likelihood 
+
+```r
+negloglik &lt;- function(params) {
+  p &lt;-  c(beta = params[1], sigma = 1/5.2, gamma = 1/4.5)
+  model &lt;- daily_confirmed(params = p)
+  d &lt;- data.frame( data=dat$daily_confirmed, model = model)
+  d &lt;- d[complete.cases(d), ] # remove rows with missing values for the data or model predicted values
+  - sum(dpois(x=d$data, lambda = d$model, log = TRUE))
+}
+```
+--
+- 'stats::optim' 
+
+```r
+fit5 &lt;- optim(par = c(0.5), fn = negloglik,  method = "Brent", lower = 0, upper = 10)
+fit5$par; gamma &lt;- 1/ 4.5 # 1/gamma = infectious period
+```
+
+```
+## [1] 9.074375
+```
+
+```r
+(R0 &lt;- fit5$par/gamma) ##
+```
+
+```
+## [1] 40.83469
+```
+
+---
+### Comparing model prediction with data
+
+&lt;img src="Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-35-1.png" style="display: block; margin: auto;" /&gt;
+
+---
+### Estimate two paramters: `\(\beta\)` and initial infecteds
+
+- Define the negative log likelihood function
+
+```r
+negloglik2 &lt;- function(params) {
+  p &lt;- c(beta = params[1], sigma = 1/5.2, gamma = 1/4.5)
+  y0 &lt;- c(S = 9334 - params[2], E = 0, I = params[2], R = 0, C = 0)
+  
+  model &lt;- daily_confirmed(params = p)
+  d &lt;- data.frame(data = dat$daily_confirmed, model = model)
+  d &lt;- d[complete.cases(d), ]
+  - sum(dpois(x = d$data, lambda = d$model, log = TRUE))
+}
+```
+
+
+---
+### 'stats::optim'
+
+```r
+fit6 &lt;- optim(par = c(1e-3, 20), fn = negloglik2)
+(theta &lt;- fit6$par)
+```
+
+```
+## [1]  9.075726 19.275180
+```
+
+```r
+gamma &lt;- 1 / 4.5 # 1/gamma = infectious period
+(R0 &lt;- theta[1]/gamma)
+```
+
+```
+## [1] 40.84077
+```
+
+---
+### Comparing model prediction with data
+
+![](Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-38-1.png)&lt;!-- --&gt;
+---
+### Estimate parameters: `\(\beta\)`, `\(\gamma\)`, and initial infecteds   
+- Define the negative log likelihood function 
+
+```r
+negloglik3 &lt;- function(params) {
+  p &lt;-  c(beta = params[1], sigma = 1/5.2, gamma = params[2])
+  y0 &lt;- c(S = 9334 - params[3], E = 0, I = params[3], R = 0, C = 0)
+  
+  model &lt;- daily_confirmed(params = p)
+  d &lt;- data.frame(data=dat$daily_confirmed, model = model)
+  d &lt;- d[complete.cases(d), ]
+  - sum(dpois(x = d$data, lambda = d$model, log=TRUE))
+}
+```
+
+- 'stats::optim'
+
+```r
+fit8 &lt;- optim(par = c(3, 0.5, 20), fn = negloglik3)
+(theta &lt;- exp(fit8$par))
+(R0 &lt;- theta[1]/theta[2])
+```
+Exercise 10: Execute the fit8. Are parameter values reasonable? Why do we 
+get NaN?
+---
+
+### Estimate parameters 2: Only positive values!
+- negative log likelihood
+
+```r
+negloglik4 &lt;- function(params) {
+  p &lt;-  c(beta = exp(params[1]), sigma=1/5.2, gamma = exp(params[2]))
+  y0 &lt;- c(S=9334-params[3], E = 0, I = exp(params[3]), R = 0, C = 0)
+  
+  model &lt;- daily_confirmed(params = p)
+  d &lt;- data.frame(data = dat$daily_confirmed, model = model)
+  d &lt;- d[complete.cases(d), ]
+  - sum(dpois(x = d$data, lambda = d$model, log = TRUE))
+}
+```
+
+---
+### 'stats::optim'
+
+```r
+fit9 &lt;- optim(par = c(log(2), log(0.4), log(50)), fn = negloglik4)
+(theta &lt;- exp(fit9$par))
+```
+
+```
+## [1] 4.8164855 0.6786712 6.8912274
+```
+
+```r
+(R0 &lt;- theta[1]/theta[2])
+```
+
+```
+## [1] 7.096935
+```
+
+---
+### Comparing model predictions with data
+
+![](Infectious_Disease_Models_R_Practice_files/figure-html/unnamed-chunk-43-1.png)&lt;!-- --&gt;
+
+Exercise 11: Try different initial values for fit9. Did you get the same results?
+
+Exercise 12: Do you think that parameter values are reasonable?
+
+---
+### Summary
+
+1. Implementing differential equation-based `\(SIR\)`, `\(SEIR\)` model in R
+
+2. Numerical integration of the model to obtain `\(S,E,I,R\)` (deSolve package and Euler)
+
+3. Estimating parameters based on the 'process' and 'measurement' concepts.
+
+4. Implementing log likelihood function and maximizing the log likelihood function using 
+the stats::optim function
+
+5. Applying scientific investigation process and estimating multiple parameters.
+
+---
+### Remaining questions 
+
+- How could we improve the model for Shincheonji outbreak?
+   
+   - Can we assume that rate of isolation increased over time?
+
+--
+
+- Which one would you choose for the model with 1 parameter vs. the one with 3
+parameters?
+--
+
+- How do you calculate confidence intervals for multiple parameters?
+
+--
+
+- Are there other algorithms for maximizing log likelihood than stats::optim?
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script src="macros.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+.remark-slide-content {
+    font-size: 19px;
+	color: #000000;
+	background-color: #FFFFF;
+    padding: 1em 4em 1em 4em;
+}
+
+/* .remark-slide-content {
+    font-size: 19px;
+	color: #d6d6d6;
+	background-color: #FFFFFF;
+    padding: 1em 4em 1em 4em;
+} */
+.inverse {
+  background-color: #606305;
+  color: #d6d6d6;
+  text-shadow: 0 0 20px #333;
+}
+
+.40px-font {
+  font-size: 40px;
+}
+
+.red { color: red; }
+
+.inverse-grey {
+  background-color: #444444;
+  color: #d6d6d6;
+  text-shadow: 0 0 20px #333;
+}
+
+.page-white-bg{    
+	font-size: 19px;
+	color: #000000;
+	background-color: #FFFFFF;
+    padding: 1em 4em 1em 4em;
+}
+
+.bg-lightblue{
+  	color: #000000;
+	background-color: #dce1f6;
+}
+
+h1, h2, h3 {
+  font-family: 'Yanone Kaffeesatz';
+  font-weight: normal;
+  /* color: #F8C471; */
+  color: #f4a628;
+  /*color: Orange;*/
+  
+}
+h2 {
+  font-size: 16px;
+}
